@@ -8,7 +8,12 @@ import {
 } from "@buape/carbon";
 import { PollLayoutType } from "discord-api-types/payloads/v10";
 import type { RESTAPIPoll } from "discord-api-types/rest/v10";
-import { Routes, type APIChannel, type APIEmbed } from "discord-api-types/v10";
+import {
+  Routes,
+  type APIAllowedMentions,
+  type APIChannel,
+  type APIEmbed,
+} from "discord-api-types/v10";
 import { requireRuntimeConfig, type OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { buildOutboundMediaLoadOptions } from "openclaw/plugin-sdk/media-runtime";
 import { extensionForMime } from "openclaw/plugin-sdk/media-runtime";
@@ -23,6 +28,7 @@ import type { RetryRunner } from "openclaw/plugin-sdk/retry-runtime";
 import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
 import { chunkDiscordTextWithMode } from "./chunk.js";
 import { createDiscordClient, resolveDiscordRest, type DiscordClientOpts } from "./client.js";
+import { buildAllowedMentionsForContent } from "./mentions.js";
 import { parseAndResolveRecipient } from "./recipient-resolution.js";
 import { fetchChannelPermissionsDiscord, isThreadChannelType } from "./send.permissions.js";
 import { DiscordSendError } from "./send.types.js";
@@ -245,11 +251,24 @@ export async function resolveDiscordChannelType(
   rest: RequestClient,
   channelId: string,
 ): Promise<number | undefined> {
+  return (await resolveDiscordChannelInfo(rest, channelId)).type;
+}
+
+export async function resolveDiscordChannelInfo(
+  rest: RequestClient,
+  channelId: string,
+): Promise<{ type?: number; guildId?: string }> {
   try {
-    const channel = (await rest.get(Routes.channel(channelId))) as APIChannel | undefined;
-    return channel?.type;
+    const channel = (await rest.get(Routes.channel(channelId))) as
+      | (APIChannel & { guild_id?: string | null })
+      | undefined;
+    const guildId =
+      channel && "guild_id" in channel && typeof channel.guild_id === "string"
+        ? channel.guild_id
+        : undefined;
+    return { type: channel?.type, guildId };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -333,6 +352,13 @@ export function buildDiscordMessagePayload(params: {
   return payload;
 }
 
+export function discordAllowedMentionsBodyPart(
+  content: string,
+): { allowed_mentions: APIAllowedMentions } | Record<string, never> {
+  const allowedMentions = buildAllowedMentionsForContent(content);
+  return allowedMentions ? { allowed_mentions: allowedMentions } : {};
+}
+
 export function stripUndefinedFields<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
 }
@@ -381,6 +407,7 @@ async function sendDiscordText(
     const body = stripUndefinedFields({
       ...serializePayload(payload),
       ...(messageReference ? { message_reference: messageReference } : {}),
+      ...discordAllowedMentionsBodyPart(chunk),
     });
     return (await request(
       () =>
@@ -462,6 +489,7 @@ async function sendDiscordMedia(
         body: stripUndefinedFields({
           ...serializePayload(payload),
           ...(messageReference ? { message_reference: messageReference } : {}),
+          ...discordAllowedMentionsBodyPart(caption),
         }),
       }) as Promise<{ id: string; channel_id: string }>,
     "media",

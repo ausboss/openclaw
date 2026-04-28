@@ -164,8 +164,80 @@ describe("sendMessageDiscord", () => {
     });
     expect(postMock).toHaveBeenCalledWith(
       Routes.channelMessages("789"),
-      expect.objectContaining({ body: { content: "ping <@123456789012345678>" } }),
+      expect.objectContaining({
+        body: expect.objectContaining({
+          content: "ping <@123456789012345678>",
+          allowed_mentions: { parse: [], users: ["123456789012345678"], roles: [] },
+        }),
+      }),
     );
+  });
+
+  it("resolves :name: shortcodes against guild emojis before sending", async () => {
+    const { rest, postMock, getMock } = makeDiscordRest();
+    getMock
+      .mockResolvedValueOnce({ type: ChannelType.GuildText, guild_id: "G1" })
+      .mockResolvedValueOnce([
+        { id: "111", name: "peepoBatman_funny", animated: false },
+        { id: "222", name: "wave", animated: true },
+      ]);
+    postMock.mockResolvedValue({ id: "msg1", channel_id: "789" });
+    await sendMessageDiscord("channel:789", "look :peepoBatman_funny: and :wave: and :unknown:", {
+      rest,
+      token: "t",
+      cfg: DISCORD_TEST_CFG,
+    });
+    const body = postMock.mock.calls[0]?.[1]?.body as { content?: string };
+    expect(body?.content).toBe("look <:peepoBatman_funny:111> and <a:wave:222> and :unknown:");
+  });
+
+  it("skips shortcode resolution when channel has no guild_id (DM)", async () => {
+    const { rest, postMock, getMock } = makeDiscordRest();
+    // DM channel — no guild_id in response.
+    getMock.mockResolvedValueOnce({ type: ChannelType.DM });
+    postMock.mockResolvedValue({ id: "msg1", channel_id: "789" });
+    await sendMessageDiscord("channel:789", "hi :foo:", {
+      rest,
+      token: "t",
+      cfg: DISCORD_TEST_CFG,
+    });
+    expect(getMock).toHaveBeenCalledTimes(1); // no emoji-list fetch attempted
+    const body = postMock.mock.calls[0]?.[1]?.body as { content?: string };
+    expect(body?.content).toBe("hi :foo:");
+  });
+
+  it("attaches allowed_mentions to whitelist user ids in content", async () => {
+    const { rest, postMock, getMock } = makeDiscordRest();
+    getMock.mockResolvedValueOnce({ type: ChannelType.GuildText });
+    postMock.mockResolvedValue({ id: "msg1", channel_id: "789" });
+    await sendMessageDiscord("channel:789", "yo <@1497108700249460736>", {
+      rest,
+      token: "t",
+      cfg: DISCORD_TEST_CFG,
+    });
+    const body = postMock.mock.calls[0]?.[1]?.body as {
+      content?: string;
+      allowed_mentions?: unknown;
+    };
+    expect(body?.content).toBe("yo <@1497108700249460736>");
+    expect(body?.allowed_mentions).toEqual({
+      parse: [],
+      users: ["1497108700249460736"],
+      roles: [],
+    });
+  });
+
+  it("omits allowed_mentions when content has no mention syntax", async () => {
+    const { rest, postMock, getMock } = makeDiscordRest();
+    getMock.mockResolvedValueOnce({ type: ChannelType.GuildText });
+    postMock.mockResolvedValue({ id: "msg1", channel_id: "789" });
+    await sendMessageDiscord("channel:789", "hello world", {
+      rest,
+      token: "t",
+      cfg: DISCORD_TEST_CFG,
+    });
+    const body = postMock.mock.calls[0]?.[1]?.body as Record<string, unknown>;
+    expect(body).not.toHaveProperty("allowed_mentions");
   });
 
   it("uses configured defaultAccount for cached mention rewriting when accountId is omitted", async () => {
@@ -198,7 +270,12 @@ describe("sendMessageDiscord", () => {
     });
     expect(postMock).toHaveBeenCalledWith(
       Routes.channelMessages("789"),
-      expect.objectContaining({ body: { content: "ping <@222333444555666777>" } }),
+      expect.objectContaining({
+        body: expect.objectContaining({
+          content: "ping <@222333444555666777>",
+          allowed_mentions: { parse: [], users: ["222333444555666777"], roles: [] },
+        }),
+      }),
     );
   });
 

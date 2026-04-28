@@ -724,6 +724,26 @@ describe("handleDiscordGuildAction - channel management", () => {
     );
   });
 
+  it('coerces string "true"/"false" booleans on channel-edit', async () => {
+    await handleGuildAction(
+      "channelEdit",
+      {
+        channelId: "C1",
+        archived: "true",
+        locked: "false",
+      },
+      channelsEnabled,
+    );
+    expect(editChannelDiscord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelId: "C1",
+        archived: true,
+        locked: false,
+      }),
+      { cfg: DISCORD_TEST_CFG },
+    );
+  });
+
   it.each([
     ["parentId is null", { parentId: null }],
     ["clearParent is true", { clearParent: true }],

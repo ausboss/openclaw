@@ -26,7 +26,20 @@ function readDiscordBooleanParam(
   params: Record<string, unknown>,
   key: string,
 ): boolean | undefined {
-  return typeof params[key] === "boolean" ? params[key] : undefined;
+  const value = params[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === "true") {
+      return true;
+    }
+    if (trimmed === "false") {
+      return false;
+    }
+  }
+  return undefined;
 }
 
 export function readDiscordChannelCreateParams(

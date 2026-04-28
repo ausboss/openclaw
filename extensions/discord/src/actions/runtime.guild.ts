@@ -1,5 +1,6 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { resolveDefaultDiscordAccountId } from "../accounts.js";
+import { forgetDiscordGuildEmojis } from "../emoji-cache.js";
 import { getPresence } from "../monitor/presence-cache.js";
 import {
   type ActionGate,
@@ -175,6 +176,7 @@ export async function handleDiscordGuildAction(
         },
         withOpts(),
       );
+      forgetDiscordGuildEmojis({ accountId, guildId });
       return jsonResult({ ok: true, emoji });
     }
     case "stickerUpload": {

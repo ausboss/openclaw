@@ -374,6 +374,21 @@ function buildChannelManagementSchema() {
         description: "Clear the parent/category when supported by the provider.",
       }),
     ),
+    archived: Type.Optional(
+      Type.Boolean({
+        description: "Archive (true) or unarchive (false) the thread on channel-edit.",
+      }),
+    ),
+    locked: Type.Optional(
+      Type.Boolean({
+        description: "Lock (true) or unlock (false) the thread on channel-edit.",
+      }),
+    ),
+    autoArchiveDuration: Type.Optional(
+      Type.Number({
+        description: "Thread auto-archive duration in minutes (60, 1440, 4320, 10080).",
+      }),
+    ),
   };
 }
 

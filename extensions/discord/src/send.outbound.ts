@@ -21,8 +21,13 @@ import { convertMarkdownTables, normalizeOptionalString } from "openclaw/plugin-
 import { loadWebMediaRaw } from "openclaw/plugin-sdk/web-media";
 import { resolveDiscordAccount } from "./accounts.js";
 import { resolveDiscordClientAccountContext } from "./client.js";
-import { rewriteDiscordKnownMentions } from "./mentions.js";
+import {
+  buildAllowedMentionsForContent,
+  rewriteDiscordKnownMentions,
+  rewriteDiscordShortcodeEmojis,
+} from "./mentions.js";
 import { parseAndResolveRecipient } from "./recipient-resolution.js";
+import { listGuildEmojisDiscord } from "./send.emojis-stickers.js";
 import {
   buildDiscordMessagePayload,
   buildDiscordSendError,
@@ -31,7 +36,7 @@ import {
   normalizeDiscordPollInput,
   normalizeStickerIds,
   resolveChannelId,
-  resolveDiscordChannelType,
+  resolveDiscordChannelInfo,
   resolveDiscordSendComponents,
   resolveDiscordSendEmbeds,
   sendDiscordMedia,
@@ -180,11 +185,21 @@ export async function sendMessageDiscord(
   const { channelId } = await resolveChannelId(rest, recipient, request);
 
   // Forum/Media channels reject POST /messages; auto-create a thread post instead.
-  const channelType = await resolveDiscordChannelType(rest, channelId);
+  const { type: channelType, guildId } = await resolveDiscordChannelInfo(rest, channelId);
+  const textWithEmojis = await rewriteDiscordShortcodeEmojis(textWithMentions, {
+    accountId: accountInfo.accountId,
+    guildId,
+    fetchEmojis: () =>
+      guildId
+        ? (listGuildEmojisDiscord(guildId, { ...opts, cfg }) as Promise<
+            { id: string; name: string; animated?: boolean }[]
+          >)
+        : Promise.resolve([]),
+  });
 
   if (isForumLikeType(channelType)) {
     const threadName = deriveForumThreadName(textWithTables);
-    const chunks = buildDiscordTextChunks(textWithMentions, {
+    const chunks = buildDiscordTextChunks(textWithEmojis, {
       maxLinesPerMessage,
       chunkMode,
       maxChars: textLimit,
@@ -203,6 +218,7 @@ export async function sendMessageDiscord(
       embeds: starterEmbeds,
       flags: silentFlags,
     });
+    const starterAllowedMentions = buildAllowedMentionsForContent(starterContent);
     let threadRes: { id: string; message?: { id: string; channel_id: string } };
     try {
       threadRes = (await request(
@@ -210,7 +226,10 @@ export async function sendMessageDiscord(
           rest.post(Routes.threads(channelId), {
             body: {
               name: threadName,
-              message: stripUndefinedFields(serializePayload(starterPayload)),
+              message: stripUndefinedFields({
+                ...serializePayload(starterPayload),
+                ...(starterAllowedMentions ? { allowed_mentions: starterAllowedMentions } : {}),
+              }),
             },
           }) as Promise<{ id: string; message?: { id: string; channel_id: string } }>,
         "forum-thread",
@@ -303,7 +322,7 @@ export async function sendMessageDiscord(
       result = await sendDiscordMedia(
         rest,
         channelId,
-        textWithMentions,
+        textWithEmojis,
         opts.mediaUrl,
         opts.filename,
         opts.mediaLocalRoots,
@@ -322,7 +341,7 @@ export async function sendMessageDiscord(
       result = await sendDiscordText(
         rest,
         channelId,
-        textWithMentions,
+        textWithEmojis,
         opts.replyTo,
         request,
         maxLinesPerMessage,
@@ -399,6 +418,7 @@ export async function sendWebhookMessageDiscord(
     accountId: account.accountId,
   });
 
+  const allowedMentions = buildAllowedMentionsForContent(rewrittenText);
   const response = await (proxyFetch ?? fetch)(
     resolveWebhookExecutionUrl({
       webhookId,
@@ -416,6 +436,7 @@ export async function sendWebhookMessageDiscord(
         username: normalizeOptionalString(opts.username),
         avatar_url: normalizeOptionalString(opts.avatarUrl),
         ...(messageReference ? { message_reference: messageReference } : {}),
+        ...(allowedMentions ? { allowed_mentions: allowedMentions } : {}),
       }),
     },
   );

@@ -697,6 +697,14 @@ describe("message tool schema scoping", () => {
       expect.arrayContaining(["send", "broadcast"]),
     );
   });
+
+  it("declares thread-state fields so channel-edit booleans are coerced", () => {
+    const tool = createMessageTool({ config: {} as never });
+    const properties = getToolProperties(tool);
+    expect(properties.archived).toMatchObject({ type: "boolean" });
+    expect(properties.locked).toMatchObject({ type: "boolean" });
+    expect(properties.autoArchiveDuration).toMatchObject({ type: "number" });
+  });
 });
 
 describe("message tool description", () => {
