@@ -1,4 +1,9 @@
-import { parseAvailableTags, readNumberParam, readStringParam } from "../runtime-api.js";
+import {
+  parseAvailableTags,
+  readNumberParam,
+  readStringArrayParam,
+  readStringParam,
+} from "../runtime-api.js";
 import type {
   DiscordChannelCreate,
   DiscordChannelEdit,
@@ -54,6 +59,7 @@ export function readDiscordChannelEditParams(params: Record<string, unknown>): D
     autoArchiveDuration:
       readNumberParam(params, "autoArchiveDuration", { integer: true }) ?? undefined,
     availableTags: parseAvailableTags(params.availableTags),
+    appliedTags: readStringArrayParam(params, "appliedTags") ?? undefined,
   };
 }
 
